@@ -1615,12 +1615,48 @@ static const char *test_dns_decode(void) {
   return NULL;
 }
 
+static const char *check_www_cesanta_com_reply(const char *pkt, size_t len) {
+  char name[256];
+
+  in_addr_t addr = inet_addr("54.194.65.250");
+  struct in_addr ina;
+  struct ns_dns_message msg;
+
+  memset(&msg, 0, sizeof(msg));
+  ns_parse_dns(pkt, len, &msg);
+
+  memset(name, 0, sizeof(name));
+  ASSERT(ns_dns_uncompress_name(&msg, &msg.questions[0].name, name,
+                                sizeof(name)) > 0);
+  ASSERT(strncmp(name, "www.cesanta.com", sizeof(name)) == 0);
+  memset(name, 0, sizeof(name));
+  ASSERT(ns_dns_uncompress_name(&msg, &msg.answers[0].name, name,
+                                sizeof(name)) > 0);
+  ASSERT(strncmp(name, "www.cesanta.com", sizeof(name)) == 0);
+  ASSERT(msg.answers[0].rtype == NS_DNS_CNAME_RECORD);
+  memset(name, 0, sizeof(name));
+  ASSERT(ns_dns_parse_record_data(&msg, &msg.answers[0], name,
+                                  sizeof(name)) != -1);
+  ASSERT(strncmp(name, "cesanta.com", sizeof(name)) == 0);
+  memset(name, 0, sizeof(name));
+  ASSERT(ns_dns_uncompress_name(&msg, &msg.answers[1].name, name,
+                                sizeof(name)) > 0);
+  ASSERT(strncmp(name, "cesanta.com", sizeof(name)) == 0);
+
+  ASSERT(msg.answers[1].rtype == NS_DNS_A_RECORD);
+  ASSERT(ns_dns_parse_record_data(&msg, &msg.answers[1], &ina,
+                                  sizeof(ina)) != -1);
+  ASSERT(ina.s_addr == addr);
+
+  return NULL;
+}
+
 static const char *test_dns_reply_encode(void) {
+  const char *err;
   struct ns_dns_message msg;
   struct ns_dns_resource_record *rr;
   char name[256];
-  in_addr_t addr = inet_addr("1.2.3.4");
-  struct in_addr ina;
+  in_addr_t addr = inet_addr("54.194.65.250");
   struct iobuf pkt;
   struct ns_connection nc;
 
@@ -1657,30 +1693,78 @@ static const char *test_dns_reply_encode(void) {
   rr->kind = NS_DNS_ANSWER;
   ASSERT(ns_dns_encode_record(&pkt, rr, "cesanta.com", 11, &addr, 4) != -1);
 
-  /* check the answer */
-  memset(&msg, 0, sizeof(msg));
-  ns_parse_dns(pkt.buf, pkt.len, &msg);
+  if ((err = check_www_cesanta_com_reply(pkt.buf, pkt.len)) != NULL) {
+    return err;
+  }
 
-  memset(name, 0, sizeof(name));
-  ASSERT(ns_dns_uncompress_name(&msg, &msg.questions[0].name, name,
-                                sizeof(name)) > 0);
-  ASSERT(strncmp(name, "www.cesanta.com", sizeof(name)) == 0);
-  memset(name, 0, sizeof(name));
-  ASSERT(ns_dns_uncompress_name(&msg, &msg.answers[0].name, name,
-                                sizeof(name)) > 0);
-  ASSERT(strncmp(name, "www.cesanta.com", sizeof(name)) == 0);
-  memset(name, 0, sizeof(name));
-  ASSERT(ns_dns_parse_record_data(&msg, &msg.answers[0], name,
-                                  sizeof(name)) != -1);
-  ASSERT(strncmp(name, "cesanta.com", sizeof(name)) == 0);
-  memset(name, 0, sizeof(name));
-  ASSERT(ns_dns_uncompress_name(&msg, &msg.answers[1].name, name,
-                                sizeof(name)) > 0);
-  ASSERT(strncmp(name, "cesanta.com", sizeof(name)) == 0);
+  iobuf_free(&pkt);
+  iobuf_free(&nc.send_iobuf);
+  return NULL;
+}
 
-  ASSERT(ns_dns_parse_record_data(&msg, &msg.answers[1], &ina,
-                                  sizeof(ina)) != -1);
-  ASSERT(ina.s_addr == addr);
+static void dns_lookup_cb(struct iobuf *io, struct ns_dns_message *msg,
+                           struct ns_dns_resource_record *question,
+                           enum ns_dns_server_lookup_op op,
+                           const char *name, void *data) {
+  in_addr_t addr = * (in_addr_t *) data;
+  in_addr_t cesanta_ip = inet_addr("54.194.65.250");
+
+  switch (op) {
+    case NS_DNS_SERVER_LOOKUP:
+      if (question->rtype != NS_DNS_A_RECORD) {
+        break;
+      }
+
+      if (strcmp(name, "www.cesanta.com") == 0) {
+        ns_dns_reply_record(io, msg, question, NS_DNS_CNAME_RECORD, 3600, name,
+                            "cesanta.com", strlen("cesanta.com"));
+
+        ns_dns_reply_record(io, msg, question, NS_DNS_A_RECORD, 3600,
+                            "cesanta.com", &cesanta_ip, 4);
+        break;
+      } else if (strcmp(name, "cesanta.com") == 0) {
+        addr = cesanta_ip;
+      }
+
+      ns_dns_reply_record(io, msg, question, NS_DNS_A_RECORD, 3600, name, &addr, 4);
+    case NS_DNS_SERVER_FINALIZE:
+      /* you can set error codes here */
+      (void) msg;
+      break;
+  }
+}
+
+static const char *test_dns_server(void) {
+  const char *err;
+  struct ns_connection nc;
+  struct iobuf pkt;
+  struct ns_dns_message msg;
+  in_addr_t addr = inet_addr("54.194.65.250");
+
+  iobuf_init(&pkt, 0);
+  memset(&nc, 0, sizeof(nc));
+
+  ns_send_dns_query(&nc, "www.cesanta.com", NS_DNS_A_RECORD);
+  /* remove message length from tcp buffer */
+  iobuf_remove(&nc.send_iobuf, 2);
+
+  ns_dns_create_reply(&pkt, nc.send_iobuf.buf, nc.send_iobuf.len,
+                      dns_lookup_cb, &addr);
+
+  if ((err = check_www_cesanta_com_reply(pkt.buf, pkt.len)) != NULL) {
+    return err;
+  }
+
+  iobuf_free(&pkt);
+  iobuf_free(&nc.send_iobuf);
+
+  /* check malformed request error */
+  ASSERT(ns_dns_create_reply(&pkt, nc.send_iobuf.buf, nc.send_iobuf.len,
+                             dns_lookup_cb, &addr) > 0);
+  ASSERT(ns_parse_dns(pkt.buf, pkt.len, &msg) != -1);
+  ASSERT(msg.flags & 1);
+  ASSERT(msg.num_questions == 0);
+  ASSERT(msg.num_answers == 0);
 
   iobuf_free(&pkt);
   iobuf_free(&nc.send_iobuf);
@@ -1979,6 +2063,7 @@ static const char *run_tests(const char *filter) {
   RUN_TEST(test_dns_uncompress);
   RUN_TEST(test_dns_decode);
   RUN_TEST(test_dns_reply_encode);
+  RUN_TEST(test_dns_server);
   RUN_TEST(test_dns_resolve);
   RUN_TEST(test_dns_resolve_local);
   RUN_TEST(test_dns_resolve_timeout);

@@ -150,7 +150,7 @@ static int ns_dns_encode_name(struct iobuf *io, const char *name, size_t len) {
  * Returns the number of bytes appened or -1 in case of error.
  */
 int ns_dns_encode_record(struct iobuf *io, struct ns_dns_resource_record *rr,
-                         const char *name, size_t nlen, void *rdata, size_t rlen) {
+                         const char *name, size_t nlen, const void *rdata, size_t rlen) {
   size_t pos = io->len;
   uint16_t u16;
   uint32_t u32;

@@ -1,6 +1,6 @@
 PROG = unit_test
 SSL=-DNS_ENABLE_SSL
-CFLAGS = -W -Wall -Werror $(SSL) -DNS_ENABLE_IPV6 -DNS_ENABLE_THREADS -DNS_ENABLE_MQTT_BROKER -DNS_INTERNAL="" -include unit_test.h -DNS_MALLOC=test_malloc -DNS_CALLOC=test_calloc -pthread -g -O0 $(CFLAGS_EXTRA)
+CFLAGS = -W -Wall -Werror $(SSL) -DNS_ENABLE_IPV6 -DNS_ENABLE_THREADS -DNS_ENABLE_MQTT_BROKER -DNS_ENABLE_DNS_SERVER -DNS_INTERNAL="" -include unit_test.h -DNS_MALLOC=test_malloc -DNS_CALLOC=test_calloc -pthread -g -O0 $(CFLAGS_EXTRA)
 PEDANTIC=$(shell gcc --version 2>/dev/null | grep -q clang && echo -pedantic)
 AMALGAMATED_SOURCES = $(PROG).c ../fossa.c
 EAT_MALLOC_WARNINGS=MallocLogFile=/dev/null
@@ -69,7 +69,7 @@ docker:
 
 asan:
 	$(CLANG) -fsanitize=address -fcolor-diagnostics -std=c99 $(PROG).c $(addprefix ../modules/, $(SOURCES)) -o $(PROG)_asan $(CFLAGS) -DNO_DNS_TEST -UNS_ENABLE_SSL
-	ASAN_SYMBOLIZER_PATH=/usr/local/bin/llvm-symbolizer-3.5 ASAN_OPTIONS=allocator_may_return_null=1,symbolize=1 ./$(PROG)_asan
+	ASAN_SYMBOLIZER_PATH=/usr/local/bin/llvm-symbolizer-3.5 ASAN_OPTIONS=allocator_may_return_null=1,symbolize=1 ./$(PROG)_asan $(TEST_FILTER)
 
 cpplint:
 	cpplint.py --verbose=0 --extensions=c,h ../modules/*.[ch] >/dev/null
