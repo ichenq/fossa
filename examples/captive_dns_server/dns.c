@@ -25,49 +25,28 @@ static int s_exit_flag = 0;
  * For all other names it will return a dummy IP address passed
  * as it's `data` value.
  */
-static void lookup(struct iobuf *io, struct ns_dns_message *msg,
-                   struct ns_dns_resource_record *question,
-                   enum ns_dns_server_lookup_op op,
-                   const char *name, void *data) {
-  in_addr_t addr = * (in_addr_t *) data;
+static void ev_handler(struct ns_connection *nc, int ev, void *p) {
+  struct ns_dns_server_request *dr = (struct ns_dns_server_request *) p;
   in_addr_t cesanta_ip = inet_addr("54.194.65.250");
+  in_addr_t addr = * (in_addr_t *) nc->user_data;
 
-  switch (op) {
-    case NS_DNS_SERVER_LOOKUP:
-      if (question->rtype != NS_DNS_A_RECORD) {
+  switch (ev) {
+    case NS_DNS_QUESTION:
+      if (dr->question->rtype != NS_DNS_A_RECORD) {
         break;
       }
 
-      if (strcmp(name, "www.cesanta.com") == 0) {
-        ns_dns_reply_record(io, msg, question, NS_DNS_CNAME_RECORD, 3600, name,
-                            "cesanta.com", strlen("cesanta.com"));
+      if (strcmp(dr->name, "www.cesanta.com") == 0) {
+        ns_dns_reply(nc, NS_DNS_CNAME_RECORD, 3600, dr->name, "cesanta.com",
+                     strlen("cesanta.com"));
 
-        ns_dns_reply_record(io, msg, question, NS_DNS_A_RECORD, 3600, "cesanta.com",
-                            &cesanta_ip, 4);
+        ns_dns_reply(nc, NS_DNS_A_RECORD, 3600, "cesanta.com", &cesanta_ip, 4);
         break;
-      } else if (strcmp(name, "cesanta.com") == 0) {
+      } else if (strcmp(dr->name, "cesanta.com") == 0) {
         addr = cesanta_ip;
       }
 
-      ns_dns_reply_record(io, msg, question, NS_DNS_A_RECORD, 3600, name,
-                          &addr, 4);
-    case NS_DNS_SERVER_FINALIZE:
-      /* you can set error codes here */
-      (void) msg;
-      break;
-  }
-}
-
-static void ev_handler(struct ns_connection *nc, int ev, void *ev_data) {
-  struct iobuf *io = &nc->send_iobuf;;
-
-  (void) ev_data;
-
-  switch (ev) {
-    case NS_RECV:
-      ns_dns_create_reply(io, nc->recv_iobuf.buf, nc->recv_iobuf.len, lookup, nc->user_data);
-      ns_send(nc, io->buf, io->len);
-      iobuf_remove(io, io->len);
+      ns_dns_reply(nc, NS_DNS_A_RECORD, 3600, dr->name, &addr, 4);
       break;
   }
 }
@@ -99,6 +78,7 @@ int main(int argc, char *argv[]) {
     fprintf(stderr, "cannot bind to socket\n");
     exit(1);
   }
+  set_protocol_dns_server(nc);
   nc->user_data = &addr;
 
   while (s_exit_flag == 0) {

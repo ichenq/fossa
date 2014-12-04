@@ -1683,14 +1683,14 @@ static const char *test_dns_reply_encode(void) {
   *rr = msg.questions[0];
   rr->rtype = NS_DNS_CNAME_RECORD;
   rr->ttl = 3600;
-  rr->kind = NS_DNS_ANSWER;
+  rr->kind = NS_DNS_ANSWER_KIND;
   ASSERT(ns_dns_encode_record(&pkt, rr, "www.cesanta.com", 15,
                               (void *) "cesanta.com", 11) != -1);
 
   rr = &msg.answers[1];
   *rr = msg.questions[0];
   rr->ttl = 3600;
-  rr->kind = NS_DNS_ANSWER;
+  rr->kind = NS_DNS_ANSWER_KIND;
   ASSERT(ns_dns_encode_record(&pkt, rr, "cesanta.com", 11, &addr, 4) != -1);
 
   if ((err = check_www_cesanta_com_reply(pkt.buf, pkt.len)) != NULL) {

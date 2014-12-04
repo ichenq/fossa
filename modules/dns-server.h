@@ -16,6 +16,9 @@ extern "C" {
 
 #define NS_DNS_SERVER_DEFAULT_TTL 3600
 
+#define NS_DNS_QUESTION 300
+#define NS_DNS_CLOSE    301
+
 enum ns_dns_server_lookup_op {
   NS_DNS_SERVER_LOOKUP,
   NS_DNS_SERVER_FINALIZE
@@ -24,6 +27,15 @@ enum ns_dns_server_lookup_op {
 typedef void (*ns_dns_lookup_t)(struct iobuf *, struct ns_dns_message *,
                                 struct ns_dns_resource_record *, enum ns_dns_server_lookup_op,
                                 const char *, void *);
+
+struct ns_dns_server_request {
+  struct ns_dns_message *msg; /* dns message */
+  struct ns_dns_resource_record *question; /* current question record */
+  const char *name; /* current null terminated name extracted from the record */
+};
+
+void set_protocol_dns_server(struct ns_connection *);
+int ns_dns_reply(struct ns_connection *, int, int, const char *, const void *, size_t);
 
 int ns_dns_create_reply(struct iobuf *, const char *, size_t, ns_dns_lookup_t, void *);
 int ns_dns_reply_record(struct iobuf *, struct ns_dns_message *, struct ns_dns_resource_record *,

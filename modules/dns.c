@@ -168,7 +168,7 @@ int ns_dns_encode_record(struct iobuf *io, struct ns_dns_resource_record *rr,
   u16 = htons(rr->rclass);
   iobuf_append(io, &u16, 2);
 
-  if (rr->kind == NS_DNS_ANSWER) {
+  if (rr->kind == NS_DNS_ANSWER_KIND) {
     u32 = htonl(rr->ttl);
     iobuf_append(io, &u32, 4);
 
@@ -213,7 +213,7 @@ void ns_send_dns_query(struct ns_connection* nc, const char *name,
 
   rr->rtype = query_type;
   rr->rclass = 1; /* Class: inet */
-  rr->kind = NS_DNS_QUESTION;
+  rr->kind = NS_DNS_QUESTION_KIND;
 
   if (ns_dns_encode_record(&pkt, rr, name, strlen(name), NULL, 0) == -1) {
     /* TODO(mkm): return an error code */
@@ -254,7 +254,7 @@ static unsigned char *ns_parse_dns_resource_record(
   rr->rclass = data[0] << 8 | data[1];
   data += 2;
 
-  rr->kind = reply ? NS_DNS_ANSWER : NS_DNS_QUESTION;
+  rr->kind = reply ? NS_DNS_ANSWER_KIND : NS_DNS_QUESTION_KIND;
   if (reply) {
     rr->ttl = data[0] << 24 | data[1] << 16 | data[2] << 8 | data[3];
     data += 4;

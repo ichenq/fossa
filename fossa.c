@@ -4076,7 +4076,7 @@ int ns_dns_encode_record(struct iobuf *io, struct ns_dns_resource_record *rr,
   u16 = htons(rr->rclass);
   iobuf_append(io, &u16, 2);
 
-  if (rr->kind == NS_DNS_ANSWER) {
+  if (rr->kind == NS_DNS_ANSWER_KIND) {
     u32 = htonl(rr->ttl);
     iobuf_append(io, &u32, 4);
 
@@ -4121,7 +4121,7 @@ void ns_send_dns_query(struct ns_connection* nc, const char *name,
 
   rr->rtype = query_type;
   rr->rclass = 1; /* Class: inet */
-  rr->kind = NS_DNS_QUESTION;
+  rr->kind = NS_DNS_QUESTION_KIND;
 
   if (ns_dns_encode_record(&pkt, rr, name, strlen(name), NULL, 0) == -1) {
     /* TODO(mkm): return an error code */
@@ -4162,7 +4162,7 @@ static unsigned char *ns_parse_dns_resource_record(
   rr->rclass = data[0] << 8 | data[1];
   data += 2;
 
-  rr->kind = reply ? NS_DNS_ANSWER : NS_DNS_QUESTION;
+  rr->kind = reply ? NS_DNS_ANSWER_KIND : NS_DNS_QUESTION_KIND;
   if (reply) {
     rr->ttl = data[0] << 24 | data[1] << 16 | data[2] << 8 | data[3];
     data += 4;
@@ -4265,6 +4265,64 @@ size_t ns_dns_uncompress_name(struct ns_dns_message *msg, struct ns_str *name,
 
 #ifdef NS_ENABLE_DNS_SERVER
 
+
+static void ns_dns_internal_hack(struct iobuf *io, struct ns_dns_message *msg,
+                   struct ns_dns_resource_record *question,
+                   enum ns_dns_server_lookup_op op,
+                   const char *name, void *data) {
+  struct ns_connection *nc = (struct ns_connection *) data;
+  struct ns_dns_server_request *dr;
+
+  (void) io;
+  (void) msg;
+  (void) question;
+  (void) name;
+
+  dr = (struct ns_dns_server_request *) nc->proto_data;
+  dr->msg = msg;
+  dr->question = question;
+  dr->name = name;
+
+  switch (op) {
+    case NS_DNS_SERVER_LOOKUP:
+      nc->handler(nc, NS_DNS_QUESTION, dr);
+      break;
+    case NS_DNS_SERVER_FINALIZE:
+      nc->handler(nc, NS_DNS_CLOSE, dr);
+      break;
+  }
+}
+
+static void ns_dns_server_handler(struct ns_connection *nc, int ev, void *ev_data) {
+  struct iobuf *io = &nc->send_iobuf;
+  struct ns_dns_server_request dr;
+
+  (void) ev_data;
+
+  nc->proto_data = &dr;
+
+  switch (ev) {
+    case NS_RECV:
+      ns_dns_create_reply(io, nc->recv_iobuf.buf, nc->recv_iobuf.len, ns_dns_internal_hack, nc);
+      ns_send(nc, io->buf, io->len);
+      iobuf_remove(io, io->len);
+      break;
+  }
+
+}
+
+void set_protocol_dns_server(struct ns_connection *nc) {
+  nc->proto_handler = ns_dns_server_handler;
+}
+
+int ns_dns_reply(struct ns_connection *nc, int rtype, int ttl, const char *name,
+                 const void *rdata, size_t rlen) {
+  struct ns_dns_server_request *dr;
+  dr = (struct ns_dns_server_request *) nc->proto_data;
+
+  return ns_dns_reply_record(&nc->send_iobuf, dr->msg, dr->question, rtype, ttl,
+                             name, rdata, rlen);
+}
 
 /*
  * Appends a DNS reply to the IO buffer.
@@ -4376,7 +4434,7 @@ int ns_dns_reply_record(struct iobuf *io, struct ns_dns_message *msg,
   }
 
   *ans = *question;
-  ans->kind = NS_DNS_ANSWER;
+  ans->kind = NS_DNS_ANSWER_KIND;
   ans->rtype = rtype;
   ans->ttl = ttl;
 

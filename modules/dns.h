@@ -22,8 +22,8 @@ extern "C" {
 
 enum ns_dns_resource_record_kind {
   NS_DNS_INVALID_RECORD = 0,
-  NS_DNS_QUESTION,
-  NS_DNS_ANSWER
+  NS_DNS_QUESTION_KIND,
+  NS_DNS_ANSWER_KIND
 };
 
 /* DNS resource record. */
